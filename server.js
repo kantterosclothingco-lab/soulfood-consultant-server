@@ -7,10 +7,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.send("Soulfood consultant notification server is running");
-});
-
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -19,63 +15,36 @@ const io = new Server(server, {
   },
 });
 
-// store active consultation requests
-let pendingRequests = [];
+let consultants = [];
 
 io.on("connection", (socket) => {
-  console.log("Consultant or client connected:", socket.id);
+  console.log("Consultant connected:", socket.id);
 
-  // send existing pending requests to consultant
   socket.on("register-consultant", () => {
-    socket.emit("pending-requests", pendingRequests);
-  });
-
-  // customer sends consultation request
-  socket.on("new-request", (data) => {
-    const request = {
-      id: Date.now().toString(),
-      ...data,
-      status: "pending",
-    };
-
-    pendingRequests.push(request);
-
-    // notify consultant
-    io.emit("incoming-request", request);
-  });
-
-  // consultant accepts request
-  socket.on("accept-request", ({ requestId }) => {
-    const request = pendingRequests.find((r) => r.id === requestId);
-    if (!request) return;
-
-    request.status = "accepted";
-
-    const roomId = `room-${requestId}`;
-
-    io.emit("request-accepted", {
-      requestId,
-      roomId,
-      ...request,
-    });
-  });
-
-  // consultant rejects request
-  socket.on("reject-request", ({ requestId }) => {
-    pendingRequests = pendingRequests.filter(
-      (r) => r.id !== requestId
-    );
-
-    io.emit("request-rejected", { requestId });
+    consultants.push(socket.id);
+    console.log("Consultant registered:", socket.id);
   });
 
   socket.on("disconnect", () => {
-    console.log("Disconnected:", socket.id);
+    consultants = consultants.filter((id) => id !== socket.id);
+    console.log("Consultant disconnected:", socket.id);
   });
 });
 
-const PORT = process.env.PORT || 4000;
+app.post("/notify-consultants", (req, res) => {
+  const { request } = req.body;
+
+  console.log("Incoming consultation request:", request.id);
+
+  consultants.forEach((id) => {
+    io.to(id).emit("incoming-call", request);
+  });
+
+  res.json({ success: true });
+});
+
+const PORT = 5000;
 
 server.listen(PORT, () => {
-  console.log(`Consultant server running on port ${PORT}`);
+  console.log(`Consultant app server running on http://localhost:${PORT}`);
 });
